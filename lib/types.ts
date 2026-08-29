@@ -24,6 +24,7 @@ export interface Location {
   cover_image_url: string | null;
   logo_url: string | null;
   brand_image_url: string | null;
+  boundary_geojson?: GeoJSON.Geometry | null;
   website_url: string | null;
   tagline: string | null;
   twitter_url: string | null;
