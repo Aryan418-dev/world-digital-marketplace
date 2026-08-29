@@ -22,6 +22,15 @@ export interface Location {
   population: number | null;
   description: string | null;
   cover_image_url: string | null;
+  logo_url: string | null;
+  website_url: string | null;
+  tagline: string | null;
+  twitter_url: string | null;
+  instagram_url: string | null;
+  facebook_url: string | null;
+  linkedin_url: string | null;
+  youtube_url: string | null;
+  contact_email: string | null;
   owner_id: string | null;
   owned_at: string | null;
   created_at: string;
@@ -33,7 +42,14 @@ export interface Profile {
   username: string | null;
   display_name: string | null;
   avatar_url: string | null;
+  logo_url: string | null;
   bio: string | null;
+  website_url: string | null;
+  twitter_url: string | null;
+  instagram_url: string | null;
+  facebook_url: string | null;
+  linkedin_url: string | null;
+  youtube_url: string | null;
   is_admin: boolean;
 }
 
