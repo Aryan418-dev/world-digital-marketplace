@@ -31,43 +31,7 @@ type ShapeAd = {
   loc: Location;
   geom: GeoJSON.Geometry;
   img: string;
-  /** Geographic bbox [west, south, east, north] */
-  bbox: [number, number, number, number];
 };
-
-/** Top-left, top-right, bottom-right, bottom-left for MapLibre image source */
-function imageCoordinates(bbox: [number, number, number, number]): [
-  [number, number],
-  [number, number],
-  [number, number],
-  [number, number],
-] {
-  const [west, south, east, north] = bbox;
-  return [
-    [west, north],
-    [east, north],
-    [east, south],
-    [west, south],
-  ];
-}
-
-function geomBBox(geom: GeoJSON.Geometry): [number, number, number, number] | null {
-  const rings = geomOuterRings(geom);
-  if (!rings.length) return null;
-  let west = Infinity,
-    south = Infinity,
-    east = -Infinity,
-    north = -Infinity;
-  for (const ring of rings) {
-    const [x0, y0, x1, y1] = ringBBox(ring);
-    west = Math.min(west, x0);
-    south = Math.min(south, y0);
-    east = Math.max(east, x1);
-    north = Math.max(north, y1);
-  }
-  if (!Number.isFinite(west)) return null;
-  return [west, south, east, north];
-}
 
 export function InteractiveMap({
   locations,
@@ -78,6 +42,7 @@ export function InteractiveMap({
   initialCenter = [20, 18],
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const [selected, setSelected] = useState<Location | null>(null);
   const [query, setQuery] = useState("");
@@ -85,7 +50,10 @@ export function InteractiveMap({
   const [shapeAds, setShapeAds] = useState<ShapeAd[]>([]);
   const locationsRef = useRef(locations);
   locationsRef.current = locations;
-  const adLayerIdsRef = useRef<Set<string>>(new Set());
+  const shapeAdsRef = useRef(shapeAds);
+  shapeAdsRef.current = shapeAds;
+  /** Reused DOM nodes so we never wipe the overlay every frame */
+  const adElsRef = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const flyTo = useCallback((loc: Location) => {
     if (!loc.lat || !loc.lng || !mapRef.current) return;
@@ -100,7 +68,7 @@ export function InteractiveMap({
     setQuery("");
   }, []);
 
-  // Resolve OSM boundaries (or approximate) for branded territories
+  // Resolve real OSM boundaries (or approximate) for branded territories
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -123,13 +91,10 @@ export function InteractiveMap({
           geom = approximatePolygon(loc.lat, loc.lng, loc.type);
         }
         if (!geom) continue;
-        const bbox = geomBBox(geom);
-        if (!bbox) continue;
         ads.push({
           loc,
           geom,
           img: (loc.brand_image_url || loc.logo_url) as string,
-          bbox,
         });
       }
       if (!cancelled) setShapeAds(ads);
@@ -140,144 +105,124 @@ export function InteractiveMap({
   }, [locations]);
 
   /**
-   * Territory ads as native MapLibre image (raster) sources.
-   * Geographic coordinates → locked to map through zoom / pan / rotate.
+   * Project each territory polygon → screen space and clip the brand image
+   * exactly to the border. Runs every render frame so zoom / pan / rotate stay locked.
+   * DOM nodes are reused (no innerHTML wipe) to avoid flicker/lag.
    */
-  const syncAdLayers = useCallback((map: any, ads: ShapeAd[]) => {
-    if (!map) return;
-    try {
-      if (map.isStyleLoaded && !map.isStyleLoaded()) return;
-    } catch {
-      return;
-    }
+  const redrawShapes = useCallback(() => {
+    const map = mapRef.current;
+    const overlay = overlayRef.current;
+    if (!map || !overlay) return;
 
-    const nextIds = new Set<string>();
+    const ads = shapeAdsRef.current;
+    const seen = new Set<string>();
+    const cw = map.getContainer().clientWidth;
+    const ch = map.getContainer().clientHeight;
 
     for (const ad of ads) {
       const id = ad.loc.id;
-      const srcId = `territory-img-${id}`;
-      const rasterId = `territory-raster-${id}`;
-      const maskSrcId = `territory-mask-${id}`;
-      const fillId = `territory-fill-${id}`;
-      const lineId = `territory-line-${id}`;
-      nextIds.add(id);
+      seen.add(id);
 
-      const coords = imageCoordinates(ad.bbox);
+      const rings = geomOuterRings(ad.geom);
+      if (!rings.length) continue;
 
-      if (map.getSource(srcId)) {
-        try {
-          (map.getSource(srcId) as any).setCoordinates(coords);
-        } catch {
-          /* ignore */
+      // Project every outer-ring vertex to screen pixels
+      let minSX = Infinity,
+        minSY = Infinity,
+        maxSX = -Infinity,
+        maxSY = -Infinity;
+      const projectedRings: { x: number; y: number }[][] = [];
+
+      for (const ring of rings) {
+        const pts: { x: number; y: number }[] = [];
+        for (const [lng, lat] of ring) {
+          const p = map.project([lng, lat]);
+          pts.push({ x: p.x, y: p.y });
+          if (p.x < minSX) minSX = p.x;
+          if (p.y < minSY) minSY = p.y;
+          if (p.x > maxSX) maxSX = p.x;
+          if (p.y > maxSY) maxSY = p.y;
         }
-      } else {
-        map.addSource(srcId, {
-          type: "image",
-          url: ad.img,
-          coordinates: coords,
-        });
+        if (pts.length >= 3) projectedRings.push(pts);
+      }
+      if (!projectedRings.length) continue;
+
+      const left = minSX;
+      const top = minSY;
+      const width = maxSX - minSX;
+      const height = maxSY - minSY;
+      if (width < 3 || height < 3) continue;
+
+      // Off-screen cull
+      if (left + width < -40 || top + height < -40 || left > cw + 40 || top > ch + 40) {
+        const existing = adElsRef.current.get(id);
+        if (existing) existing.style.display = "none";
+        continue;
       }
 
-      if (!map.getLayer(rasterId)) {
-        map.addLayer({
-          id: rasterId,
-          type: "raster",
-          source: srcId,
-          paint: {
-            "raster-opacity": 0.88,
-            "raster-fade-duration": 0,
-          },
-        });
+      // clip-path in local coords of the bounding box (exact border shape)
+      const clipParts: string[] = [];
+      for (const pts of projectedRings) {
+        const poly = pts
+          .map((p) => `${(p.x - left).toFixed(1)}px ${(p.y - top).toFixed(1)}px`)
+          .join(", ");
+        clipParts.push(`polygon(${poly})`);
       }
+      const clip = clipParts[0];
 
-      const maskFc: GeoJSON.FeatureCollection = {
-        type: "FeatureCollection",
-        features: [
-          {
-            type: "Feature",
-            properties: { id },
-            geometry: ad.geom,
-          },
-        ],
-      };
+      let wrap = adElsRef.current.get(id);
+      if (!wrap) {
+        wrap = document.createElement("div");
+        wrap.className = "territory-ad";
+        wrap.dataset.locId = id;
 
-      if (map.getSource(maskSrcId)) {
-        (map.getSource(maskSrcId) as any).setData(maskFc);
-      } else {
-        map.addSource(maskSrcId, { type: "geojson", data: maskFc });
-      }
+        const img = document.createElement("img");
+        img.src = ad.img;
+        img.alt = ad.loc.name;
+        img.draggable = false;
+        img.decoding = "async";
+        img.style.cssText =
+          "width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;user-select:none;";
+        wrap.appendChild(img);
 
-      if (!map.getLayer(fillId)) {
-        map.addLayer({
-          id: fillId,
-          type: "fill",
-          source: maskSrcId,
-          paint: {
-            "fill-color": "#ffffff",
-            "fill-opacity": 0.06,
-          },
-        });
-      }
-
-      if (!map.getLayer(lineId)) {
-        map.addLayer({
-          id: lineId,
-          type: "line",
-          source: maskSrcId,
-          paint: {
-            "line-color": "#ffffff",
-            "line-width": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              2,
-              1.2,
-              8,
-              2.2,
-              14,
-              3,
-            ],
-            "line-opacity": 0.9,
-          },
-        });
-      }
-
-      if (!adLayerIdsRef.current.has(id)) {
-        map.on("click", fillId, () => {
+        wrap.addEventListener("click", (e) => {
+          e.stopPropagation();
           const loc = locationsRef.current.find((l) => l.id === id);
           if (loc) setSelected(loc);
         });
-        map.on("mouseenter", fillId, () => {
-          map.getCanvas().style.cursor = "pointer";
-        });
-        map.on("mouseleave", fillId, () => {
-          map.getCanvas().style.cursor = "";
-        });
+
+        overlay.appendChild(wrap);
+        adElsRef.current.set(id, wrap);
+      }
+
+      // Update position + exact border clip every frame
+      wrap.style.cssText = [
+        "position:absolute",
+        "display:block",
+        `left:${left.toFixed(1)}px`,
+        `top:${top.toFixed(1)}px`,
+        `width:${width.toFixed(1)}px`,
+        `height:${height.toFixed(1)}px`,
+        `clip-path:${clip}`,
+        `-webkit-clip-path:${clip}`,
+        "cursor:pointer",
+        "overflow:hidden",
+        "pointer-events:auto",
+        "will-change:left,top,width,height,clip-path",
+        "box-shadow:0 0 0 1.5px rgba(255,255,255,0.85)",
+      ].join(";");
+
+      const imgEl = wrap.querySelector("img");
+      if (imgEl && imgEl.getAttribute("src") !== ad.img) {
+        imgEl.setAttribute("src", ad.img);
       }
     }
 
-    for (const oldId of adLayerIdsRef.current) {
-      if (nextIds.has(oldId)) continue;
-      for (const lid of [
-        `territory-line-${oldId}`,
-        `territory-fill-${oldId}`,
-        `territory-raster-${oldId}`,
-      ]) {
-        if (map.getLayer(lid)) map.removeLayer(lid);
-      }
-      for (const sid of [`territory-mask-${oldId}`, `territory-img-${oldId}`]) {
-        if (map.getSource(sid)) map.removeSource(sid);
-      }
-    }
-
-    adLayerIdsRef.current = nextIds;
-
-    if (map.getLayer("locations-circle")) {
-      try {
-        map.moveLayer("locations-circle");
-      } catch {
-        /* ignore */
-      }
+    // Remove ads no longer present
+    for (const [id, el] of adElsRef.current) {
+      if (seen.has(id)) continue;
+      el.remove();
+      adElsRef.current.delete(id);
     }
   }, []);
 
@@ -299,7 +244,6 @@ export function InteractiveMap({
         maxPitch: 60,
         attributionControl: false,
         fadeDuration: 0,
-        // Rotate/pitch enabled — image sources stay locked to geography
         dragRotate: true,
         pitchWithRotate: true,
         touchPitch: true,
@@ -319,9 +263,13 @@ export function InteractiveMap({
         map.resize();
         setReady(true);
         syncSource(map, locationsRef.current);
+        redrawShapes();
       };
 
       map.once("load", onLoad);
+      // Every frame during zoom/pan/rotate so clip tracks the map
+      map.on("render", redrawShapes);
+      map.on("resize", redrawShapes);
 
       requestAnimationFrame(() => {
         if (!cancelled) map.resize();
@@ -357,6 +305,7 @@ export function InteractiveMap({
       cancelled = true;
       mapRef.current?.remove();
       mapRef.current = null;
+      adElsRef.current.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -367,23 +316,18 @@ export function InteractiveMap({
   }, [locations, ready]);
 
   useEffect(() => {
-    if (!ready || !mapRef.current) return;
-    const map = mapRef.current;
-    const run = () => syncAdLayers(map, shapeAds);
-    if (map.isStyleLoaded?.()) {
-      run();
-    } else {
-      map.once("idle", run);
-    }
-  }, [shapeAds, ready, syncAdLayers]);
+    if (!ready) return;
+    redrawShapes();
+  }, [shapeAds, ready, redrawShapes]);
 
   useEffect(() => {
     const onResize = () => {
       mapRef.current?.resize();
+      redrawShapes();
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, []);
+  }, [redrawShapes]);
 
   const filtered =
     query.trim().length > 0
@@ -405,6 +349,21 @@ export function InteractiveMap({
       <div
         ref={containerRef}
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      />
+
+      {/* Territory ads: brand image cropped exactly to city/state/country border */}
+      <div
+        ref={overlayRef}
+        className="map-territory-ads"
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          pointerEvents: "none",
+          overflow: "hidden",
+          zIndex: 2,
+        }}
       />
 
       {!ready && (
