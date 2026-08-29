@@ -34,6 +34,7 @@ export async function POST(req: Request) {
     p_linkedin_url: body.linkedinUrl ?? null,
     p_youtube_url: body.youtubeUrl ?? null,
     p_contact_email: body.contactEmail ?? null,
+    p_brand_image_url: body.brandImageUrl ?? null,
   });
 
   if (error) {
