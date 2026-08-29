@@ -29,9 +29,9 @@ export default async function HomePage() {
 
   return (
     <>
-      {/* Full-viewport interactive map hero */}
+      {/* Full interactive map — no overlay */}
       <section className="hero-shell">
-        <div className="hero-map">
+        <div className="hero-map" style={{ position: "relative" }}>
           <InteractiveMap
             locations={locations}
             height="100%"
@@ -39,45 +39,24 @@ export default async function HomePage() {
             initialZoom={1.55}
             initialCenter={[15, 20]}
           />
-        </div>
-
-        <div className="hero-overlay">
-          <div className="hero-panel">
-            <h1>
-              Own a piece of the{" "}
-              <span style={{ color: "var(--primary)" }}>digital world</span>
-            </h1>
-            <p>
-              Exclusive digital ownership of countries, states, and cities. Pan the map,
-              tap a marker, and claim territory — live on the global ledger.
-            </p>
-            <div className="hero-actions">
-              <Link href="/map" className="btn btn-primary">
-                Open full map
-              </Link>
-              <Link href="/login" className="btn btn-ghost">
-                Sign up free
-              </Link>
+          {/* Compact floating stats — does not block map */}
+          <div className="map-float-stats">
+            <div>
+              <strong>{total ?? 0}</strong>
+              <span>Locations</span>
             </div>
-            <div className="hero-stats">
-              <div>
-                <strong>{total ?? 0}</strong>
-                <span>Locations</span>
-              </div>
-              <div>
-                <strong style={{ color: "var(--available)" }}>{available}</strong>
-                <span>Available</span>
-              </div>
-              <div>
-                <strong style={{ color: "var(--owned)" }}>{owned ?? 0}</strong>
-                <span>Owned</span>
-              </div>
+            <div>
+              <strong style={{ color: "var(--available)" }}>{available}</strong>
+              <span>Available</span>
+            </div>
+            <div>
+              <strong style={{ color: "var(--owned)" }}>{owned ?? 0}</strong>
+              <span>Owned</span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* How it works */}
       <section className="section">
         <div className="container">
           <h2 className="section-title">How WORLD works</h2>
@@ -110,7 +89,6 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Featured */}
       <section className="section-tight" style={{ paddingBottom: "3.5rem" }}>
         <div className="container">
           <div
@@ -138,7 +116,6 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* CTA */}
       <div className="cta-band">
         <h2>Start claiming territory today</h2>
         <p>Free signup · $10,000 preview credits · No card required</p>
