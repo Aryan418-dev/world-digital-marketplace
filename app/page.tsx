@@ -1,37 +1,161 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { LocationCard } from "@/components/LocationCard";
+import { InteractiveMap } from "@/components/InteractiveMap";
 import type { Location } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const supabase = await createClient();
-  const { data: locations } = await supabase.from("locations").select("*").eq("status", "available").order("current_price_cents", { ascending: false }).limit(8);
-  const { count: total } = await supabase.from("locations").select("*", { count: "exact", head: true });
-  const { count: owned } = await supabase.from("locations").select("*", { count: "exact", head: true }).neq("status", "available");
+  const [{ data: allLocs }, { data: featured }, { count: total }, { count: owned }] =
+    await Promise.all([
+      supabase.from("locations").select("*").not("lat", "is", null),
+      supabase
+        .from("locations")
+        .select("*")
+        .eq("status", "available")
+        .order("current_price_cents", { ascending: false })
+        .limit(8),
+      supabase.from("locations").select("*", { count: "exact", head: true }),
+      supabase
+        .from("locations")
+        .select("*", { count: "exact", head: true })
+        .neq("status", "available"),
+    ]);
+
+  const locations = (allLocs as Location[]) || [];
+  const available = (total ?? 0) - (owned ?? 0);
 
   return (
     <>
-      <section className="hero container">
-        <h1>Own a piece of the<br /><span style={{ color: "var(--primary)" }}>digital world</span></h1>
-        <p>Exclusive digital ownership of countries, states, and cities. Claim your territory on the interactive global map.</p>
-        <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
-          <Link href="/map" className="btn btn-primary">Explore the map</Link>
-          <Link href="/marketplace" className="btn btn-ghost">Browse marketplace</Link>
+      {/* Full-viewport interactive map hero */}
+      <section className="hero-shell">
+        <div className="hero-map">
+          <InteractiveMap
+            locations={locations}
+            height="100%"
+            showSearch
+            initialZoom={1.55}
+            initialCenter={[15, 20]}
+          />
+        </div>
+
+        <div className="hero-overlay">
+          <div className="hero-panel">
+            <h1>
+              Own a piece of the{" "}
+              <span style={{ color: "var(--primary)" }}>digital world</span>
+            </h1>
+            <p>
+              Exclusive digital ownership of countries, states, and cities. Pan the map,
+              tap a marker, and claim territory — live on the global ledger.
+            </p>
+            <div className="hero-actions">
+              <Link href="/map" className="btn btn-primary">
+                Open full map
+              </Link>
+              <Link href="/login" className="btn btn-ghost">
+                Sign up free
+              </Link>
+            </div>
+            <div className="hero-stats">
+              <div>
+                <strong>{total ?? 0}</strong>
+                <span>Locations</span>
+              </div>
+              <div>
+                <strong style={{ color: "var(--available)" }}>{available}</strong>
+                <span>Available</span>
+              </div>
+              <div>
+                <strong style={{ color: "var(--owned)" }}>{owned ?? 0}</strong>
+                <span>Owned</span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
-      <section className="container" style={{ paddingBottom: "3rem" }}>
-        <div className="grid grid-3" style={{ marginBottom: "3rem" }}>
-          <div className="card" style={{ textAlign: "center" }}><div style={{ fontSize: "2rem", fontWeight: 800 }}>{total ?? 0}</div><div className="muted">Locations</div></div>
-          <div className="card" style={{ textAlign: "center" }}><div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--available)" }}>{(total ?? 0) - (owned ?? 0)}</div><div className="muted">Available</div></div>
-          <div className="card" style={{ textAlign: "center" }}><div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--owned)" }}>{owned ?? 0}</div><div className="muted">Owned</div></div>
-        </div>
-        <h2 className="section-title">Featured territories</h2>
-        <div className="grid grid-2 grid-4">
-          {(locations as Location[] | null)?.map((loc) => (<LocationCard key={loc.id} location={loc} />))}
+
+      {/* How it works */}
+      <section className="section">
+        <div className="container">
+          <h2 className="section-title">How WORLD works</h2>
+          <div className="grid grid-3">
+            <div className="feature-card">
+              <div className="icon">1</div>
+              <h3>Explore the map</h3>
+              <p>
+                Pan and zoom the live global map. Green markers are available to claim.
+                Search any city or state.
+              </p>
+            </div>
+            <div className="feature-card">
+              <div className="icon">2</div>
+              <h3>Claim with credits</h3>
+              <p>
+                Create a free account, claim $10,000 preview credits, and purchase exclusive
+                digital ownership on the ledger.
+              </p>
+            </div>
+            <div className="feature-card">
+              <div className="icon">3</div>
+              <h3>List &amp; trade</h3>
+              <p>
+                Own territories in your portfolio. List them on the marketplace when you are
+                ready to sell to other collectors.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
+
+      {/* Featured */}
+      <section className="section-tight" style={{ paddingBottom: "3.5rem" }}>
+        <div className="container">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              gap: "1rem",
+              flexWrap: "wrap",
+              marginBottom: "1.15rem",
+            }}
+          >
+            <h2 className="section-title" style={{ marginBottom: 0 }}>
+              Featured territories
+            </h2>
+            <Link href="/marketplace" style={{ color: "var(--primary)", fontWeight: 600, fontSize: "0.9rem" }}>
+              View marketplace →
+            </Link>
+          </div>
+          <div className="grid grid-2 grid-4">
+            {(featured as Location[] | null)?.map((loc) => (
+              <LocationCard key={loc.id} location={loc} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <div className="cta-band">
+        <h2>Start claiming territory today</h2>
+        <p>Free signup · $10,000 preview credits · No card required</p>
+        <div style={{ display: "flex", gap: "0.65rem", justifyContent: "center", flexWrap: "wrap" }}>
+          <Link href="/login" className="btn btn-primary">
+            Create account
+          </Link>
+          <Link href="/map" className="btn btn-ghost">
+            Explore map
+          </Link>
+        </div>
+      </div>
+
+      <footer className="site-footer container">
+        <span>WORLD — Digital Real Estate Marketplace</span>
+        <span>buyworld.vercel.app</span>
+      </footer>
     </>
   );
 }
