@@ -31,6 +31,8 @@ export function InteractiveMap({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
+  const maplibreglRef = useRef<any>(null);
   const [selected, setSelected] = useState<Location | null>(null);
   const [query, setQuery] = useState("");
   const [ready, setReady] = useState(false);
@@ -56,6 +58,7 @@ export function InteractiveMap({
 
     (async () => {
       const maplibregl = (await import("maplibre-gl")).default;
+      maplibreglRef.current = maplibregl;
       if (cancelled || !containerRef.current) return;
 
       const map = new maplibregl.Map({
@@ -80,13 +83,11 @@ export function InteractiveMap({
 
       const onLoad = () => {
         if (cancelled) return;
-
-        // City / admin borders from OpenMapTiles (same tiles as basemap)
         addAdminBorders(map);
-
         map.resize();
         setReady(true);
         syncSource(map, locationsRef.current);
+        syncBrandMarkers(map, maplibregl, locationsRef.current, markersRef, setSelected);
       };
 
       map.once("load", onLoad);
@@ -124,6 +125,8 @@ export function InteractiveMap({
 
     return () => {
       cancelled = true;
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current = [];
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -133,6 +136,15 @@ export function InteractiveMap({
   useEffect(() => {
     if (!mapRef.current || !ready) return;
     syncSource(mapRef.current, locations);
+    if (maplibreglRef.current) {
+      syncBrandMarkers(
+        mapRef.current,
+        maplibreglRef.current,
+        locations,
+        markersRef,
+        setSelected
+      );
+    }
   }, [locations, ready]);
 
   useEffect(() => {
@@ -193,6 +205,14 @@ export function InteractiveMap({
 
       {selected && (
         <div className="imap-popup card">
+          {(selected.brand_image_url || selected.logo_url) && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={selected.brand_image_url || selected.logo_url || ""}
+              alt=""
+              className="imap-popup-img"
+            />
+          )}
           <div className="imap-popup-top">
             <span
               className={`badge badge-${
@@ -215,6 +235,11 @@ export function InteractiveMap({
             </button>
           </div>
           <h3>{selected.name}</h3>
+          {selected.tagline && (
+            <p style={{ color: "var(--primary)", fontSize: "0.9rem", marginBottom: 4 }}>
+              {selected.tagline}
+            </p>
+          )}
           <p className="muted">{selected.type}</p>
           <div className="price">{formatPrice(selected.current_price_cents)}</div>
           <Link
@@ -242,11 +267,49 @@ export function InteractiveMap({
   );
 }
 
-/** Country / state / city borders from OpenMapTiles boundary layer */
+function syncBrandMarkers(
+  map: any,
+  maplibregl: any,
+  locations: Location[],
+  markersRef: { current: any[] },
+  setSelected: (loc: Location) => void
+) {
+  markersRef.current.forEach((m) => m.remove());
+  markersRef.current = [];
+
+  const branded = locations.filter(
+    (l) =>
+      l.lat != null &&
+      l.lng != null &&
+      (l.status === "owned" || l.status === "listed") &&
+      (l.brand_image_url || l.logo_url)
+  );
+
+  for (const loc of branded) {
+    const imgUrl = loc.brand_image_url || loc.logo_url!;
+    const el = document.createElement("div");
+    el.className = "map-ad-marker";
+    el.innerHTML = `<img src="${imgUrl.replace(/"/g, "")}" alt="${loc.name.replace(/"/g, "")}" />`;
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setSelected(loc);
+      map.flyTo({
+        center: [loc.lng!, loc.lat!],
+        zoom: Math.max(map.getZoom(), 7),
+        duration: 800,
+      });
+    });
+
+    const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+      .setLngLat([loc.lng!, loc.lat!])
+      .addTo(map);
+    markersRef.current.push(marker);
+  }
+}
+
 function addAdminBorders(map: any) {
   if (!map.getSource("openmaptiles")) return;
 
-  // Stronger country borders
   if (!map.getLayer("world-boundary-country")) {
     map.addLayer({
       id: "world-boundary-country",
@@ -266,7 +329,6 @@ function addAdminBorders(map: any) {
     });
   }
 
-  // State / region borders (admin_level 4)
   if (!map.getLayer("world-boundary-state")) {
     map.addLayer({
       id: "world-boundary-state",
@@ -288,7 +350,6 @@ function addAdminBorders(map: any) {
     });
   }
 
-  // County / district (admin_level 6)
   if (!map.getLayer("world-boundary-county")) {
     map.addLayer({
       id: "world-boundary-county",
@@ -309,7 +370,6 @@ function addAdminBorders(map: any) {
     });
   }
 
-  // City / municipality borders (admin_level 8) — city level
   if (!map.getLayer("world-boundary-city")) {
     map.addLayer({
       id: "world-boundary-city",
