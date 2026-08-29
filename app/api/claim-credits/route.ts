@@ -1,32 +1,22 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
-const PREVIEW_CREDITS = 1_000_000;
-
 export async function POST() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { data: wallet } = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
-  if (wallet?.preview_credits_claimed) {
-    return NextResponse.json({ error: "Credits already claimed" }, { status: 400 });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { error } = await supabase.from("wallets").update({
-    balance_cents: (wallet?.balance_cents ?? 0) + PREVIEW_CREDITS,
-    preview_credits_claimed: true,
-    updated_at: new Date().toISOString(),
-  }).eq("user_id", user.id);
+  const { data, error } = await supabase.rpc("claim_preview_credits");
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    const msg = error.message || "Failed";
+    const status = msg.includes("already") ? 400 : msg.includes("Unauthorized") ? 401 : 500;
+    return NextResponse.json({ error: msg }, { status });
+  }
 
-  await supabase.from("transactions").insert({
-    buyer_id: user.id,
-    amount_cents: PREVIEW_CREDITS,
-    type: "credit_grant",
-    status: "completed",
-  });
-
-  return NextResponse.json({ ok: true, credited: PREVIEW_CREDITS });
+  return NextResponse.json(data ?? { ok: true, credited: 1_000_000 });
 }
