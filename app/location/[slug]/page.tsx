@@ -94,12 +94,20 @@ export default async function LocationPage({
         : "badge-owned";
 
   const displayLogo = loc.logo_url || ownerLogo;
+  const heroImage = loc.brand_image_url || loc.cover_image_url;
 
   return (
     <div className="container" style={{ padding: "2rem 1.25rem 4rem", maxWidth: 720 }}>
       <Link href="/marketplace" className="muted" style={{ fontSize: "0.9rem" }}>
         ← Marketplace
       </Link>
+
+      {heroImage && (
+        <div style={{ marginTop: "1.25rem" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={heroImage} alt="" className="location-hero-img" />
+        </div>
+      )}
 
       <div style={{ marginTop: "1.5rem", display: "flex", gap: "1.25rem", alignItems: "flex-start" }}>
         {displayLogo && (
@@ -168,7 +176,7 @@ export default async function LocationPage({
       {isOwner && (
         <>
           <p className="muted" style={{ marginBottom: "0.5rem" }}>
-            You own this territory. Customize how it appears to visitors.
+            You own this territory. Add a map ad image so it shows on the global map for everyone.
           </p>
           <LocationBrandingForm location={loc} />
         </>
