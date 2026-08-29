@@ -69,23 +69,33 @@ export function InteractiveMap({
         "top-right"
       );
 
-      map.once("load", () => {
+      const onReady = () => {
         if (cancelled) return;
+        map.resize();
         setReady(true);
         syncSource(map, locationsRef.current);
+      };
 
-        map.on("click", "locations-circle", (e: any) => {
-          const f = e.features?.[0];
-          if (!f) return;
-          const loc = locationsRef.current.find((l) => l.id === f.properties.id);
-          if (loc) setSelected(loc);
-        });
-        map.on("mouseenter", "locations-circle", () => {
-          map.getCanvas().style.cursor = "pointer";
-        });
-        map.on("mouseleave", "locations-circle", () => {
-          map.getCanvas().style.cursor = "";
-        });
+      map.once("load", onReady);
+      // If container was 0-size at init, resize when layout settles
+      requestAnimationFrame(() => {
+        if (!cancelled) map.resize();
+      });
+      setTimeout(() => {
+        if (!cancelled) map.resize();
+      }, 100);
+
+      map.on("click", "locations-circle", (e: any) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        const loc = locationsRef.current.find((l) => l.id === f.properties.id);
+        if (loc) setSelected(loc);
+      });
+      map.on("mouseenter", "locations-circle", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "locations-circle", () => {
+        map.getCanvas().style.cursor = "";
       });
 
       mapRef.current = map;
@@ -104,6 +114,12 @@ export function InteractiveMap({
     syncSource(mapRef.current, locations);
   }, [locations, ready]);
 
+  useEffect(() => {
+    const onResize = () => mapRef.current?.resize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   const filtered =
     query.trim().length > 0
       ? locations
@@ -112,8 +128,19 @@ export function InteractiveMap({
       : [];
 
   return (
-    <div className={`imap ${className}`} style={{ height, position: "relative" }}>
-      <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
+    <div
+      className={`imap ${className}`}
+      style={{
+        height,
+        width: "100%",
+        position: "relative",
+        minHeight: 320,
+      }}
+    >
+      <div
+        ref={containerRef}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      />
 
       {!ready && (
         <div className="imap-loading">
