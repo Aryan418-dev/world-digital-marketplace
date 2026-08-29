@@ -26,7 +26,7 @@ export function InteractiveMap({
   height = "100%",
   showSearch = true,
   className = "",
-  initialZoom = 1.6,
+  initialZoom = 1.8,
   initialCenter = [20, 18],
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -39,7 +39,13 @@ export function InteractiveMap({
 
   const flyTo = useCallback((loc: Location) => {
     if (!loc.lat || !loc.lng || !mapRef.current) return;
-    mapRef.current.flyTo({ center: [loc.lng, loc.lat], zoom: 5, duration: 1200 });
+    mapRef.current.flyTo({
+      center: [loc.lng, loc.lat],
+      zoom: 6.5,
+      pitch: 55,
+      bearing: -20,
+      duration: 1800,
+    });
     setSelected(loc);
     setQuery("");
   }, []);
@@ -57,39 +63,89 @@ export function InteractiveMap({
         style: "https://tiles.openfreemap.org/styles/dark",
         center: initialCenter,
         zoom: initialZoom,
+        pitch: 45,
+        bearing: -12,
+        maxPitch: 85,
         attributionControl: false,
         fadeDuration: 0,
-        maxPitch: 0,
-        dragRotate: false,
-        pitchWithRotate: false,
+        dragRotate: true,
+        pitchWithRotate: true,
+        touchPitch: true,
       });
 
       map.addControl(
-        new maplibregl.NavigationControl({ showCompass: false }),
+        new maplibregl.NavigationControl({
+          showCompass: true,
+          visualizePitch: true,
+        }),
         "top-right"
       );
 
-      const onReady = () => {
+      const enable3D = () => {
         if (cancelled) return;
+
+        // Terrain (DEM) for real 3D elevation
+        try {
+          if (!map.getSource("terrain")) {
+            map.addSource("terrain", {
+              type: "raster-dem",
+              tiles: [
+                "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
+              ],
+              encoding: "terrarium",
+              tileSize: 256,
+              maxzoom: 15,
+            });
+          }
+          map.setTerrain({ source: "terrain", exaggeration: 1.35 });
+        } catch {
+          // Terrain optional — pitch still works without DEM
+        }
+
+        // Atmospheric sky for 3D depth
+        try {
+          if (!map.getLayer("sky")) {
+            map.addLayer({
+              id: "sky",
+              type: "sky",
+              paint: {
+                "sky-type": "atmosphere",
+                "sky-atmosphere-sun": [0.0, 90.0],
+                "sky-atmosphere-sun-intensity": 12,
+              },
+            });
+          }
+        } catch {
+          // Sky not supported in all builds
+        }
+
         map.resize();
         setReady(true);
         syncSource(map, locationsRef.current);
       };
 
-      map.once("load", onReady);
-      // If container was 0-size at init, resize when layout settles
+      map.once("load", enable3D);
+
       requestAnimationFrame(() => {
         if (!cancelled) map.resize();
       });
       setTimeout(() => {
         if (!cancelled) map.resize();
-      }, 100);
+      }, 120);
 
       map.on("click", "locations-circle", (e: any) => {
         const f = e.features?.[0];
         if (!f) return;
         const loc = locationsRef.current.find((l) => l.id === f.properties.id);
-        if (loc) setSelected(loc);
+        if (loc) {
+          setSelected(loc);
+          map.flyTo({
+            center: [loc.lng!, loc.lat!],
+            zoom: Math.max(map.getZoom(), 5.5),
+            pitch: 55,
+            duration: 1000,
+          });
+        }
       });
       map.on("mouseenter", "locations-circle", () => {
         map.getCanvas().style.cursor = "pointer";
@@ -103,6 +159,11 @@ export function InteractiveMap({
 
     return () => {
       cancelled = true;
+      try {
+        mapRef.current?.setTerrain(null);
+      } catch {
+        /* ignore */
+      }
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -145,7 +206,7 @@ export function InteractiveMap({
       {!ready && (
         <div className="imap-loading">
           <div className="imap-spinner" />
-          <span>Loading map…</span>
+          <span>Loading 3D map…</span>
         </div>
       )}
 
@@ -184,24 +245,41 @@ export function InteractiveMap({
             >
               {selected.status}
             </span>
-            <button type="button" className="imap-close" onClick={() => setSelected(null)} aria-label="Close">
+            <button
+              type="button"
+              className="imap-close"
+              onClick={() => setSelected(null)}
+              aria-label="Close"
+            >
               ✕
             </button>
           </div>
           <h3>{selected.name}</h3>
           <p className="muted">{selected.type}</p>
           <div className="price">{formatPrice(selected.current_price_cents)}</div>
-          <Link href={`/location/${selected.slug}`} className="btn btn-primary" style={{ width: "100%" }}>
+          <Link
+            href={`/location/${selected.slug}`}
+            className="btn btn-primary"
+            style={{ width: "100%" }}
+          >
             View details
           </Link>
         </div>
       )}
 
       <div className="imap-legend">
-        <span><i style={{ background: "var(--available)" }} /> Available</span>
-        <span><i style={{ background: "var(--owned)" }} /> Owned</span>
-        <span><i style={{ background: "var(--listed)" }} /> Listed</span>
+        <span>
+          <i style={{ background: "var(--available)" }} /> Available
+        </span>
+        <span>
+          <i style={{ background: "var(--owned)" }} /> Owned
+        </span>
+        <span>
+          <i style={{ background: "var(--listed)" }} /> Listed
+        </span>
       </div>
+
+      <div className="imap-3d-hint">3D · drag to tilt · pinch to pitch</div>
     </div>
   );
 }
@@ -239,6 +317,33 @@ function syncSource(map: any, locations: Location[]) {
     maxzoom: 12,
   });
 
+  // Soft glow under markers (reads better in 3D)
+  map.addLayer({
+    id: "locations-glow",
+    type: "circle",
+    source: "locations",
+    paint: {
+      "circle-radius": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        1, 8,
+        6, 16,
+        10, 24,
+      ],
+      "circle-color": [
+        "match",
+        ["get", "status"],
+        "available", "#22c55e",
+        "listed", "#3b82f6",
+        "owned", "#f59e0b",
+        "#8b93a7",
+      ],
+      "circle-opacity": 0.22,
+      "circle-blur": 0.8,
+    },
+  });
+
   map.addLayer({
     id: "locations-circle",
     type: "circle",
@@ -262,7 +367,9 @@ function syncSource(map: any, locations: Location[]) {
       ],
       "circle-stroke-width": 1.5,
       "circle-stroke-color": "#0a0b0f",
-      "circle-opacity": 0.92,
+      "circle-opacity": 0.95,
+      "circle-pitch-alignment": "map",
+      "circle-pitch-scale": "map",
     },
   });
 }
