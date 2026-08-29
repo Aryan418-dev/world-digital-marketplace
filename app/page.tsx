@@ -29,30 +29,34 @@ export default async function HomePage() {
 
   return (
     <>
-      {/* Full interactive map — no overlay */}
-      <section className="hero-shell">
-        <div className="hero-map" style={{ position: "relative" }}>
-          <InteractiveMap
-            locations={locations}
-            height="100%"
-            showSearch
-            initialZoom={1.55}
-            initialCenter={[15, 20]}
-          />
-          {/* Compact floating stats — does not block map */}
-          <div className="map-float-stats">
-            <div>
-              <strong>{total ?? 0}</strong>
-              <span>Locations</span>
-            </div>
-            <div>
-              <strong style={{ color: "var(--available)" }}>{available}</strong>
-              <span>Available</span>
-            </div>
-            <div>
-              <strong style={{ color: "var(--owned)" }}>{owned ?? 0}</strong>
-              <span>Owned</span>
-            </div>
+      <section
+        className="hero-shell"
+        style={{
+          position: "relative",
+          width: "100%",
+          height: "calc(100dvh - 60px)",
+          minHeight: 480,
+        }}
+      >
+        <InteractiveMap
+          locations={locations}
+          height="100%"
+          showSearch
+          initialZoom={1.55}
+          initialCenter={[15, 20]}
+        />
+        <div className="map-float-stats">
+          <div>
+            <strong>{total ?? 0}</strong>
+            <span>Locations</span>
+          </div>
+          <div>
+            <strong style={{ color: "var(--available)" }}>{available}</strong>
+            <span>Available</span>
+          </div>
+          <div>
+            <strong style={{ color: "var(--owned)" }}>{owned ?? 0}</strong>
+            <span>Owned</span>
           </div>
         </div>
       </section>
