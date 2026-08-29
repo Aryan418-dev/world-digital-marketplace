@@ -11,6 +11,9 @@ export function LocationBrandingForm({ location }: { location: Location }) {
   const [err, setErr] = useState<string | null>(null);
 
   const [logoUrl, setLogoUrl] = useState(location.logo_url || "");
+  const [brandImageUrl, setBrandImageUrl] = useState(
+    location.brand_image_url || location.cover_image_url || ""
+  );
   const [websiteUrl, setWebsiteUrl] = useState(location.website_url || "");
   const [tagline, setTagline] = useState(location.tagline || "");
   const [description, setDescription] = useState(location.description || "");
@@ -33,6 +36,7 @@ export function LocationBrandingForm({ location }: { location: Location }) {
         body: JSON.stringify({
           locationId: location.id,
           logoUrl,
+          brandImageUrl,
           websiteUrl,
           tagline,
           description,
@@ -46,7 +50,7 @@ export function LocationBrandingForm({ location }: { location: Location }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Save failed");
-      setMsg("Saved");
+      setMsg("Saved — map ad updates on next refresh");
       router.refresh();
     } catch (e: any) {
       setErr(e.message);
@@ -59,12 +63,20 @@ export function LocationBrandingForm({ location }: { location: Location }) {
     <form onSubmit={save} className="card" style={{ marginTop: "1.5rem" }}>
       <h2 style={{ fontSize: "1.15rem", marginBottom: "0.35rem" }}>Territory branding</h2>
       <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "1.15rem" }}>
-        Logo, website, social links and details shown on this territory page.
+        Map ad image appears on the global map for your territory. Use a direct image URL (PNG/JPG/WebP).
       </p>
 
       <div className="brand-grid">
+        <label className="field full">
+          <span>Map ad image URL (shown on map)</span>
+          <input
+            value={brandImageUrl}
+            onChange={(e) => setBrandImageUrl(e.target.value)}
+            placeholder="https://…/your-ad.jpg"
+          />
+        </label>
         <label className="field">
-          <span>Logo image URL</span>
+          <span>Logo URL</span>
           <input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://…/logo.png" />
         </label>
         <label className="field">
@@ -105,11 +117,36 @@ export function LocationBrandingForm({ location }: { location: Location }) {
         </label>
       </div>
 
-      {logoUrl && (
-        <div style={{ marginTop: 12 }}>
-          <span className="muted" style={{ fontSize: "0.8rem" }}>Preview</span>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={logoUrl} alt="Logo preview" className="brand-logo-preview" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+      {(brandImageUrl || logoUrl) && (
+        <div style={{ marginTop: 14, display: "flex", gap: 16, flexWrap: "wrap" }}>
+          {brandImageUrl && (
+            <div>
+              <span className="muted" style={{ fontSize: "0.8rem" }}>Map ad preview</span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={brandImageUrl}
+                alt="Map ad preview"
+                className="brand-ad-preview"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+              />
+            </div>
+          )}
+          {logoUrl && (
+            <div>
+              <span className="muted" style={{ fontSize: "0.8rem" }}>Logo</span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={logoUrl}
+                alt="Logo preview"
+                className="brand-logo-preview"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+              />
+            </div>
+          )}
         </div>
       )}
 
