@@ -26,7 +26,7 @@ export function InteractiveMap({
   height = "100%",
   showSearch = true,
   className = "",
-  initialZoom = 1.8,
+  initialZoom = 1.6,
   initialCenter = [20, 18],
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -41,10 +41,10 @@ export function InteractiveMap({
     if (!loc.lat || !loc.lng || !mapRef.current) return;
     mapRef.current.flyTo({
       center: [loc.lng, loc.lat],
-      zoom: 6.5,
-      pitch: 60,
-      bearing: -25,
-      duration: 1800,
+      zoom: 8.5,
+      pitch: 0,
+      bearing: 0,
+      duration: 1400,
     });
     setSelected(loc);
     setQuery("");
@@ -63,43 +63,26 @@ export function InteractiveMap({
         style: "https://tiles.openfreemap.org/styles/dark",
         center: initialCenter,
         zoom: initialZoom,
-        pitch: 50,
-        bearing: -15,
-        maxPitch: 85,
+        pitch: 0,
+        bearing: 0,
+        maxPitch: 0,
         attributionControl: false,
         fadeDuration: 0,
-        dragRotate: true,
-        pitchWithRotate: true,
-        touchPitch: true,
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
       });
 
       map.addControl(
-        new maplibregl.NavigationControl({
-          showCompass: true,
-          visualizePitch: true,
-        }),
+        new maplibregl.NavigationControl({ showCompass: false }),
         "top-right"
       );
 
       const onLoad = () => {
         if (cancelled) return;
 
-        try {
-          if (!map.getSource("terrain")) {
-            map.addSource("terrain", {
-              type: "raster-dem",
-              tiles: [
-                "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
-              ],
-              encoding: "terrarium",
-              tileSize: 256,
-              maxzoom: 15,
-            });
-          }
-          map.setTerrain({ source: "terrain", exaggeration: 1.5 });
-        } catch {
-          // pitch still works without DEM
-        }
+        // City / admin borders from OpenMapTiles (same tiles as basemap)
+        addAdminBorders(map);
 
         map.resize();
         setReady(true);
@@ -123,9 +106,9 @@ export function InteractiveMap({
           setSelected(loc);
           map.flyTo({
             center: [loc.lng!, loc.lat!],
-            zoom: Math.max(map.getZoom(), 5.5),
-            pitch: 60,
-            duration: 1000,
+            zoom: Math.max(map.getZoom(), 8),
+            pitch: 0,
+            duration: 900,
           });
         }
       });
@@ -141,11 +124,6 @@ export function InteractiveMap({
 
     return () => {
       cancelled = true;
-      try {
-        mapRef.current?.setTerrain(null);
-      } catch {
-        /* ignore */
-      }
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -188,7 +166,7 @@ export function InteractiveMap({
       {!ready && (
         <div className="imap-loading">
           <div className="imap-spinner" />
-          <span>Loading 3D map…</span>
+          <span>Loading map…</span>
         </div>
       )}
 
@@ -264,6 +242,95 @@ export function InteractiveMap({
   );
 }
 
+/** Country / state / city borders from OpenMapTiles boundary layer */
+function addAdminBorders(map: any) {
+  if (!map.getSource("openmaptiles")) return;
+
+  // Stronger country borders
+  if (!map.getLayer("world-boundary-country")) {
+    map.addLayer({
+      id: "world-boundary-country",
+      type: "line",
+      source: "openmaptiles",
+      "source-layer": "boundary",
+      filter: [
+        "all",
+        ["==", ["get", "admin_level"], 2],
+        ["!=", ["get", "maritime"], 1],
+      ],
+      paint: {
+        "line-color": "#4b5568",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 1, 0.6, 6, 1.4, 10, 2],
+        "line-opacity": 0.85,
+      },
+    });
+  }
+
+  // State / region borders (admin_level 4)
+  if (!map.getLayer("world-boundary-state")) {
+    map.addLayer({
+      id: "world-boundary-state",
+      type: "line",
+      source: "openmaptiles",
+      "source-layer": "boundary",
+      minzoom: 3,
+      filter: [
+        "all",
+        ["==", ["get", "admin_level"], 4],
+        ["!=", ["get", "maritime"], 1],
+      ],
+      paint: {
+        "line-color": "#6366f1",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 3, 0.5, 8, 1.2, 12, 1.8],
+        "line-opacity": 0.75,
+        "line-dasharray": [2, 1.5],
+      },
+    });
+  }
+
+  // County / district (admin_level 6)
+  if (!map.getLayer("world-boundary-county")) {
+    map.addLayer({
+      id: "world-boundary-county",
+      type: "line",
+      source: "openmaptiles",
+      "source-layer": "boundary",
+      minzoom: 6,
+      filter: [
+        "all",
+        ["==", ["get", "admin_level"], 6],
+        ["!=", ["get", "maritime"], 1],
+      ],
+      paint: {
+        "line-color": "#818cf8",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 6, 0.4, 10, 1, 14, 1.4],
+        "line-opacity": 0.55,
+      },
+    });
+  }
+
+  // City / municipality borders (admin_level 8) — city level
+  if (!map.getLayer("world-boundary-city")) {
+    map.addLayer({
+      id: "world-boundary-city",
+      type: "line",
+      source: "openmaptiles",
+      "source-layer": "boundary",
+      minzoom: 8,
+      filter: [
+        "all",
+        ["==", ["get", "admin_level"], 8],
+        ["!=", ["get", "maritime"], 1],
+      ],
+      paint: {
+        "line-color": "#a5b4fc",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.6, 12, 1.2, 16, 1.8],
+        "line-opacity": 0.7,
+      },
+    });
+  }
+}
+
 function syncSource(map: any, locations: Location[]) {
   const geojson = {
     type: "FeatureCollection" as const,
@@ -298,32 +365,6 @@ function syncSource(map: any, locations: Location[]) {
   });
 
   map.addLayer({
-    id: "locations-glow",
-    type: "circle",
-    source: "locations",
-    paint: {
-      "circle-radius": [
-        "interpolate",
-        ["linear"],
-        ["zoom"],
-        1, 8,
-        6, 16,
-        10, 24,
-      ],
-      "circle-color": [
-        "match",
-        ["get", "status"],
-        "available", "#22c55e",
-        "listed", "#3b82f6",
-        "owned", "#f59e0b",
-        "#8b93a7",
-      ],
-      "circle-opacity": 0.22,
-      "circle-blur": 0.8,
-    },
-  });
-
-  map.addLayer({
     id: "locations-circle",
     type: "circle",
     source: "locations",
@@ -347,8 +388,6 @@ function syncSource(map: any, locations: Location[]) {
       "circle-stroke-width": 1.5,
       "circle-stroke-color": "#0a0b0f",
       "circle-opacity": 0.95,
-      "circle-pitch-alignment": "map",
-      "circle-pitch-scale": "map",
     },
   });
 }
