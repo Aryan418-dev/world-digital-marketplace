@@ -72,6 +72,15 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
+.location-hero-img {
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
 /* Map ad image markers (owner promotions) */
 .map-ad-marker {
   width: 88px;
