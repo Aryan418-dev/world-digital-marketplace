@@ -23,6 +23,7 @@ export interface Location {
   description: string | null;
   cover_image_url: string | null;
   logo_url: string | null;
+  brand_image_url: string | null;
   website_url: string | null;
   tagline: string | null;
   twitter_url: string | null;
