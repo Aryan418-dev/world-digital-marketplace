@@ -3,6 +3,12 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import type { Location } from "@/lib/types";
+import {
+  approximatePolygon,
+  fetchBoundaryGeoJSON,
+  geomOuterRings,
+  ringBBox,
+} from "@/lib/geo";
 
 function formatPrice(cents: number) {
   return new Intl.NumberFormat("en-US", {
@@ -21,6 +27,12 @@ type Props = {
   initialCenter?: [number, number];
 };
 
+type ShapeAd = {
+  loc: Location;
+  geom: GeoJSON.Geometry;
+  img: string;
+};
+
 export function InteractiveMap({
   locations,
   height = "100%",
@@ -31,19 +43,21 @@ export function InteractiveMap({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
-  const maplibreglRef = useRef<any>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const [selected, setSelected] = useState<Location | null>(null);
   const [query, setQuery] = useState("");
   const [ready, setReady] = useState(false);
+  const [shapeAds, setShapeAds] = useState<ShapeAd[]>([]);
   const locationsRef = useRef(locations);
   locationsRef.current = locations;
+  const shapeAdsRef = useRef(shapeAds);
+  shapeAdsRef.current = shapeAds;
 
   const flyTo = useCallback((loc: Location) => {
     if (!loc.lat || !loc.lng || !mapRef.current) return;
     mapRef.current.flyTo({
       center: [loc.lng, loc.lat],
-      zoom: 8.5,
+      zoom: loc.type === "country" ? 4 : loc.type === "state" ? 6 : 9,
       pitch: 0,
       bearing: 0,
       duration: 1400,
@@ -52,13 +66,146 @@ export function InteractiveMap({
     setQuery("");
   }, []);
 
+  // Load boundary polygons for branded owned/listed locations
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const targets = locations.filter(
+        (l) =>
+          l.lat != null &&
+          l.lng != null &&
+          (l.status === "owned" || l.status === "listed") &&
+          (l.brand_image_url || l.logo_url)
+      );
+      const ads: ShapeAd[] = [];
+      for (const loc of targets) {
+        let geom: GeoJSON.Geometry | null = null;
+        if ((loc as any).boundary_geojson) {
+          geom = (loc as any).boundary_geojson as GeoJSON.Geometry;
+        } else {
+          geom = await fetchBoundaryGeoJSON(loc.name, loc.type);
+        }
+        if (!geom && loc.lat != null && loc.lng != null) {
+          geom = approximatePolygon(loc.lat, loc.lng, loc.type);
+        }
+        if (!geom) continue;
+        ads.push({
+          loc,
+          geom,
+          img: (loc.brand_image_url || loc.logo_url) as string,
+        });
+      }
+      if (!cancelled) setShapeAds(ads);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [locations]);
+
+  const redrawShapes = useCallback(() => {
+    const map = mapRef.current;
+    const svg = svgRef.current;
+    if (!map || !svg) return;
+
+    // clear
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    const ns = "http://www.w3.org/2000/svg";
+    const defs = document.createElementNS(ns, "defs");
+    svg.appendChild(defs);
+
+    for (const ad of shapeAdsRef.current) {
+      const rings = geomOuterRings(ad.geom);
+      if (!rings.length) continue;
+
+      // Combined bbox in geographic coords
+      let minX = Infinity,
+        minY = Infinity,
+        maxX = -Infinity,
+        maxY = -Infinity;
+      const projectedRings: { x: number; y: number }[][] = [];
+
+      for (const ring of rings) {
+        const [bx0, by0, bx1, by1] = ringBBox(ring);
+        minX = Math.min(minX, bx0);
+        minY = Math.min(minY, by0);
+        maxX = Math.max(maxX, bx1);
+        maxY = Math.max(maxY, by1);
+
+        const pts = ring.map(([lng, lat]) => {
+          const p = map.project([lng, lat]);
+          return { x: p.x, y: p.y };
+        });
+        projectedRings.push(pts);
+      }
+
+      // Skip if entirely off-screen (rough)
+      const tl = map.project([minX, maxY]);
+      const br = map.project([maxX, minY]);
+      const pad = 40;
+      const w = map.getContainer().clientWidth;
+      const h = map.getContainer().clientHeight;
+      if (br.x < -pad || tl.x > w + pad || br.y < -pad || tl.y > h + pad) continue;
+
+      const clipId = `clip-${ad.loc.id}`;
+      const clip = document.createElementNS(ns, "clipPath");
+      clip.setAttribute("id", clipId);
+
+      for (const pts of projectedRings) {
+        if (pts.length < 3) continue;
+        const path = document.createElementNS(ns, "path");
+        const d =
+          pts
+            .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+            .join(" ") + " Z";
+        path.setAttribute("d", d);
+        clip.appendChild(path);
+      }
+      defs.appendChild(clip);
+
+      // Image stretched to geographic bbox, clipped to polygon
+      const img = document.createElementNS(ns, "image");
+      img.setAttributeNS("http://www.w3.org/1999/xlink", "href", ad.img);
+      img.setAttribute("href", ad.img);
+      img.setAttribute("x", Math.min(tl.x, br.x).toFixed(1));
+      img.setAttribute("y", Math.min(tl.y, br.y).toFixed(1));
+      img.setAttribute("width", Math.abs(br.x - tl.x).toFixed(1));
+      img.setAttribute("height", Math.abs(br.y - tl.y).toFixed(1));
+      img.setAttribute("preserveAspectRatio", "xMidYMid slice");
+      img.setAttribute("clip-path", `url(#${clipId})`);
+      img.style.cursor = "pointer";
+      img.style.pointerEvents = "all";
+      img.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setSelected(ad.loc);
+      });
+      svg.appendChild(img);
+
+      // Border outline
+      for (const pts of projectedRings) {
+        if (pts.length < 3) continue;
+        const outline = document.createElementNS(ns, "path");
+        const d =
+          pts
+            .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+            .join(" ") + " Z";
+        outline.setAttribute("d", d);
+        outline.setAttribute("fill", "none");
+        outline.setAttribute("stroke", "rgba(255,255,255,0.9)");
+        outline.setAttribute("stroke-width", "2");
+        outline.setAttribute("stroke-linejoin", "round");
+        outline.style.pointerEvents = "none";
+        svg.appendChild(outline);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     let cancelled = false;
 
     (async () => {
       const maplibregl = (await import("maplibre-gl")).default;
-      maplibreglRef.current = maplibregl;
       if (cancelled || !containerRef.current) return;
 
       const map = new maplibregl.Map({
@@ -87,10 +234,13 @@ export function InteractiveMap({
         map.resize();
         setReady(true);
         syncSource(map, locationsRef.current);
-        syncBrandMarkers(map, maplibregl, locationsRef.current, markersRef, setSelected);
+        redrawShapes();
       };
 
       map.once("load", onLoad);
+      map.on("move", redrawShapes);
+      map.on("zoom", redrawShapes);
+      map.on("resize", redrawShapes);
 
       requestAnimationFrame(() => {
         if (!cancelled) map.resize();
@@ -125,8 +275,6 @@ export function InteractiveMap({
 
     return () => {
       cancelled = true;
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current = [];
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -136,22 +284,21 @@ export function InteractiveMap({
   useEffect(() => {
     if (!mapRef.current || !ready) return;
     syncSource(mapRef.current, locations);
-    if (maplibreglRef.current) {
-      syncBrandMarkers(
-        mapRef.current,
-        maplibreglRef.current,
-        locations,
-        markersRef,
-        setSelected
-      );
-    }
   }, [locations, ready]);
 
   useEffect(() => {
-    const onResize = () => mapRef.current?.resize();
+    if (!ready) return;
+    redrawShapes();
+  }, [shapeAds, ready, redrawShapes]);
+
+  useEffect(() => {
+    const onResize = () => {
+      mapRef.current?.resize();
+      redrawShapes();
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, []);
+  }, [redrawShapes]);
 
   const filtered =
     query.trim().length > 0
@@ -173,6 +320,21 @@ export function InteractiveMap({
       <div
         ref={containerRef}
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      />
+
+      {/* Shape-clipped territory ads — image fills the city/state border */}
+      <svg
+        ref={svgRef}
+        className="map-shape-ads"
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          pointerEvents: "none",
+          overflow: "hidden",
+          zIndex: 2,
+        }}
       />
 
       {!ready && (
@@ -267,46 +429,6 @@ export function InteractiveMap({
   );
 }
 
-function syncBrandMarkers(
-  map: any,
-  maplibregl: any,
-  locations: Location[],
-  markersRef: { current: any[] },
-  setSelected: (loc: Location) => void
-) {
-  markersRef.current.forEach((m) => m.remove());
-  markersRef.current = [];
-
-  const branded = locations.filter(
-    (l) =>
-      l.lat != null &&
-      l.lng != null &&
-      (l.status === "owned" || l.status === "listed") &&
-      (l.brand_image_url || l.logo_url)
-  );
-
-  for (const loc of branded) {
-    const imgUrl = loc.brand_image_url || loc.logo_url!;
-    const el = document.createElement("div");
-    el.className = "map-ad-marker";
-    el.innerHTML = `<img src="${imgUrl.replace(/"/g, "")}" alt="${loc.name.replace(/"/g, "")}" />`;
-    el.addEventListener("click", (e) => {
-      e.stopPropagation();
-      setSelected(loc);
-      map.flyTo({
-        center: [loc.lng!, loc.lat!],
-        zoom: Math.max(map.getZoom(), 7),
-        duration: 800,
-      });
-    });
-
-    const marker = new maplibregl.Marker({ element: el, anchor: "center" })
-      .setLngLat([loc.lng!, loc.lat!])
-      .addTo(map);
-    markersRef.current.push(marker);
-  }
-}
-
 function addAdminBorders(map: any) {
   if (!map.getSource("openmaptiles")) return;
 
@@ -346,26 +468,6 @@ function addAdminBorders(map: any) {
         "line-width": ["interpolate", ["linear"], ["zoom"], 3, 0.5, 8, 1.2, 12, 1.8],
         "line-opacity": 0.75,
         "line-dasharray": [2, 1.5],
-      },
-    });
-  }
-
-  if (!map.getLayer("world-boundary-county")) {
-    map.addLayer({
-      id: "world-boundary-county",
-      type: "line",
-      source: "openmaptiles",
-      "source-layer": "boundary",
-      minzoom: 6,
-      filter: [
-        "all",
-        ["==", ["get", "admin_level"], 6],
-        ["!=", ["get", "maritime"], 1],
-      ],
-      paint: {
-        "line-color": "#818cf8",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 6, 0.4, 10, 1, 14, 1.4],
-        "line-opacity": 0.55,
       },
     });
   }
@@ -428,6 +530,8 @@ function syncSource(map: any, locations: Location[]) {
     id: "locations-circle",
     type: "circle",
     source: "locations",
+    // Hide circle when location is branded (shape ad shows instead) — still used for available
+    filter: ["!=", ["get", "status"], "__never__"],
     paint: {
       "circle-radius": [
         "interpolate",
