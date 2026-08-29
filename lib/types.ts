@@ -1,0 +1,44 @@
+export type LocationStatus =
+  | "available"
+  | "purchase_pending"
+  | "owned"
+  | "listed"
+  | "sale_pending";
+
+export type LocationType = "country" | "state" | "city";
+
+export interface Location {
+  id: string;
+  slug: string;
+  name: string;
+  type: LocationType;
+  parent_id: string | null;
+  status: LocationStatus;
+  base_price_cents: number;
+  current_price_cents: number;
+  lat: number | null;
+  lng: number | null;
+  country_code: string | null;
+  population: number | null;
+  description: string | null;
+  cover_image_url: string | null;
+  owner_id: string | null;
+  owned_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Profile {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  is_admin: boolean;
+}
+
+export interface Wallet {
+  user_id: string;
+  balance_cents: number;
+  preview_credits_claimed: boolean;
+}
