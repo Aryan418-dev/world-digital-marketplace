@@ -42,8 +42,8 @@ export function InteractiveMap({
     mapRef.current.flyTo({
       center: [loc.lng, loc.lat],
       zoom: 6.5,
-      pitch: 55,
-      bearing: -20,
+      pitch: 60,
+      bearing: -25,
       duration: 1800,
     });
     setSelected(loc);
@@ -63,8 +63,8 @@ export function InteractiveMap({
         style: "https://tiles.openfreemap.org/styles/dark",
         center: initialCenter,
         zoom: initialZoom,
-        pitch: 45,
-        bearing: -12,
+        pitch: 50,
+        bearing: -15,
         maxPitch: 85,
         attributionControl: false,
         fadeDuration: 0,
@@ -81,10 +81,9 @@ export function InteractiveMap({
         "top-right"
       );
 
-      const enable3D = () => {
+      const onLoad = () => {
         if (cancelled) return;
 
-        // Terrain (DEM) for real 3D elevation
         try {
           if (!map.getSource("terrain")) {
             map.addSource("terrain", {
@@ -97,26 +96,9 @@ export function InteractiveMap({
               maxzoom: 15,
             });
           }
-          map.setTerrain({ source: "terrain", exaggeration: 1.35 });
+          map.setTerrain({ source: "terrain", exaggeration: 1.5 });
         } catch {
-          // Terrain optional — pitch still works without DEM
-        }
-
-        // Atmospheric sky for 3D depth
-        try {
-          if (!map.getLayer("sky")) {
-            map.addLayer({
-              id: "sky",
-              type: "sky",
-              paint: {
-                "sky-type": "atmosphere",
-                "sky-atmosphere-sun": [0.0, 90.0],
-                "sky-atmosphere-sun-intensity": 12,
-              },
-            });
-          }
-        } catch {
-          // Sky not supported in all builds
+          // pitch still works without DEM
         }
 
         map.resize();
@@ -124,7 +106,7 @@ export function InteractiveMap({
         syncSource(map, locationsRef.current);
       };
 
-      map.once("load", enable3D);
+      map.once("load", onLoad);
 
       requestAnimationFrame(() => {
         if (!cancelled) map.resize();
@@ -142,7 +124,7 @@ export function InteractiveMap({
           map.flyTo({
             center: [loc.lng!, loc.lat!],
             zoom: Math.max(map.getZoom(), 5.5),
-            pitch: 55,
+            pitch: 60,
             duration: 1000,
           });
         }
@@ -278,8 +260,6 @@ export function InteractiveMap({
           <i style={{ background: "var(--listed)" }} /> Listed
         </span>
       </div>
-
-      <div className="imap-3d-hint">3D · drag to tilt · pinch to pitch</div>
     </div>
   );
 }
@@ -317,7 +297,6 @@ function syncSource(map: any, locations: Location[]) {
     maxzoom: 12,
   });
 
-  // Soft glow under markers (reads better in 3D)
   map.addLayer({
     id: "locations-glow",
     type: "circle",
