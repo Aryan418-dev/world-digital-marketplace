@@ -42,8 +42,8 @@ export function InteractiveMap({
   initialCenter = [20, 18],
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
   const [selected, setSelected] = useState<Location | null>(null);
   const [query, setQuery] = useState("");
   const [ready, setReady] = useState(false);
@@ -66,7 +66,7 @@ export function InteractiveMap({
     setQuery("");
   }, []);
 
-  // Load boundary polygons for branded owned/listed locations
+  // Resolve real OSM boundaries (or approximate) for branded territories
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -80,8 +80,8 @@ export function InteractiveMap({
       const ads: ShapeAd[] = [];
       for (const loc of targets) {
         let geom: GeoJSON.Geometry | null = null;
-        if ((loc as any).boundary_geojson) {
-          geom = (loc as any).boundary_geojson as GeoJSON.Geometry;
+        if (loc.boundary_geojson) {
+          geom = loc.boundary_geojson as GeoJSON.Geometry;
         } else {
           geom = await fetchBoundaryGeoJSON(loc.name, loc.type);
         }
@@ -102,101 +102,95 @@ export function InteractiveMap({
     };
   }, [locations]);
 
+  /** Project polygons → HTML elements with clip-path = territory border */
   const redrawShapes = useCallback(() => {
     const map = mapRef.current;
-    const svg = svgRef.current;
-    if (!map || !svg) return;
+    const overlay = overlayRef.current;
+    if (!map || !overlay) return;
 
-    // clear
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
-
-    const ns = "http://www.w3.org/2000/svg";
-    const defs = document.createElementNS(ns, "defs");
-    svg.appendChild(defs);
+    overlay.innerHTML = "";
 
     for (const ad of shapeAdsRef.current) {
       const rings = geomOuterRings(ad.geom);
       if (!rings.length) continue;
 
-      // Combined bbox in geographic coords
       let minX = Infinity,
         minY = Infinity,
         maxX = -Infinity,
         maxY = -Infinity;
-      const projectedRings: { x: number; y: number }[][] = [];
 
+      const projected: { x: number; y: number }[][] = [];
       for (const ring of rings) {
         const [bx0, by0, bx1, by1] = ringBBox(ring);
         minX = Math.min(minX, bx0);
         minY = Math.min(minY, by0);
         maxX = Math.max(maxX, bx1);
         maxY = Math.max(maxY, by1);
-
-        const pts = ring.map(([lng, lat]) => {
-          const p = map.project([lng, lat]);
-          return { x: p.x, y: p.y };
-        });
-        projectedRings.push(pts);
+        projected.push(
+          ring.map(([lng, lat]) => {
+            const p = map.project([lng, lat]);
+            return { x: p.x, y: p.y };
+          })
+        );
       }
 
-      // Skip if entirely off-screen (rough)
       const tl = map.project([minX, maxY]);
       const br = map.project([maxX, minY]);
-      const pad = 40;
-      const w = map.getContainer().clientWidth;
-      const h = map.getContainer().clientHeight;
-      if (br.x < -pad || tl.x > w + pad || br.y < -pad || tl.y > h + pad) continue;
+      const left = Math.min(tl.x, br.x);
+      const top = Math.min(tl.y, br.y);
+      const width = Math.abs(br.x - tl.x);
+      const height = Math.abs(br.y - tl.y);
+      if (width < 4 || height < 4) continue;
 
-      const clipId = `clip-${ad.loc.id}`;
-      const clip = document.createElementNS(ns, "clipPath");
-      clip.setAttribute("id", clipId);
+      // Off-screen cull
+      const cw = map.getContainer().clientWidth;
+      const ch = map.getContainer().clientHeight;
+      if (left + width < -20 || top + height < -20 || left > cw + 20 || top > ch + 20)
+        continue;
 
-      for (const pts of projectedRings) {
+      // clip-path polygon in local coords of the box
+      const clipParts: string[] = [];
+      for (const pts of projected) {
         if (pts.length < 3) continue;
-        const path = document.createElementNS(ns, "path");
-        const d =
-          pts
-            .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
-            .join(" ") + " Z";
-        path.setAttribute("d", d);
-        clip.appendChild(path);
+        const poly = pts
+          .map((p) => `${(p.x - left).toFixed(1)}px ${(p.y - top).toFixed(1)}px`)
+          .join(", ");
+        clipParts.push(`polygon(${poly})`);
       }
-      defs.appendChild(clip);
+      if (!clipParts.length) continue;
 
-      // Image stretched to geographic bbox, clipped to polygon
-      const img = document.createElementNS(ns, "image");
-      img.setAttributeNS("http://www.w3.org/1999/xlink", "href", ad.img);
-      img.setAttribute("href", ad.img);
-      img.setAttribute("x", Math.min(tl.x, br.x).toFixed(1));
-      img.setAttribute("y", Math.min(tl.y, br.y).toFixed(1));
-      img.setAttribute("width", Math.abs(br.x - tl.x).toFixed(1));
-      img.setAttribute("height", Math.abs(br.y - tl.y).toFixed(1));
-      img.setAttribute("preserveAspectRatio", "xMidYMid slice");
-      img.setAttribute("clip-path", `url(#${clipId})`);
-      img.style.cursor = "pointer";
-      img.style.pointerEvents = "all";
-      img.addEventListener("click", (e) => {
+      const wrap = document.createElement("div");
+      wrap.className = "territory-ad";
+      wrap.style.cssText = [
+        "position:absolute",
+        `left:${left.toFixed(1)}px`,
+        `top:${top.toFixed(1)}px`,
+        `width:${width.toFixed(1)}px`,
+        `height:${height.toFixed(1)}px`,
+        `clip-path:${clipParts[0]}`,
+        clipParts.length > 1 ? `-webkit-clip-path:${clipParts[0]}` : "",
+        "cursor:pointer",
+        "overflow:hidden",
+        "pointer-events:auto",
+        "box-shadow:0 0 0 1.5px rgba(255,255,255,0.85)",
+      ]
+        .filter(Boolean)
+        .join(";");
+
+      const img = document.createElement("img");
+      img.src = ad.img;
+      img.alt = ad.loc.name;
+      img.draggable = false;
+      img.style.cssText =
+        "width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;";
+      wrap.appendChild(img);
+
+      wrap.addEventListener("click", (e) => {
         e.stopPropagation();
         setSelected(ad.loc);
       });
-      svg.appendChild(img);
 
-      // Border outline
-      for (const pts of projectedRings) {
-        if (pts.length < 3) continue;
-        const outline = document.createElementNS(ns, "path");
-        const d =
-          pts
-            .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
-            .join(" ") + " Z";
-        outline.setAttribute("d", d);
-        outline.setAttribute("fill", "none");
-        outline.setAttribute("stroke", "rgba(255,255,255,0.9)");
-        outline.setAttribute("stroke-width", "2");
-        outline.setAttribute("stroke-linejoin", "round");
-        outline.style.pointerEvents = "none";
-        svg.appendChild(outline);
-      }
+      overlay.appendChild(wrap);
     }
   }, []);
 
@@ -322,10 +316,10 @@ export function InteractiveMap({
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
       />
 
-      {/* Shape-clipped territory ads — image fills the city/state border */}
-      <svg
-        ref={svgRef}
-        className="map-shape-ads"
+      {/* Territory ads: image cropped exactly to city/state/country border */}
+      <div
+        ref={overlayRef}
+        className="map-territory-ads"
         style={{
           position: "absolute",
           inset: 0,
@@ -530,8 +524,6 @@ function syncSource(map: any, locations: Location[]) {
     id: "locations-circle",
     type: "circle",
     source: "locations",
-    // Hide circle when location is branded (shape ad shows instead) — still used for available
-    filter: ["!=", ["get", "status"], "__never__"],
     paint: {
       "circle-radius": [
         "interpolate",
