@@ -43,11 +43,19 @@ export function Nav() {
           </Link>
         ))}
         {email ? (
-          <Link href="/dashboard" className="btn btn-ghost" style={{ padding: "0.4rem 0.9rem" }}>
+          <Link
+            href="/dashboard"
+            className="btn btn-ghost"
+            style={{ padding: "0.4rem 0.9rem", fontSize: "0.85rem" }}
+          >
             {email.split("@")[0]}
           </Link>
         ) : (
-          <Link href="/login" className="btn btn-primary" style={{ padding: "0.4rem 0.9rem" }}>
+          <Link
+            href="/login"
+            className="btn btn-primary"
+            style={{ padding: "0.4rem 0.95rem", fontSize: "0.85rem" }}
+          >
             Sign in
           </Link>
         )}
