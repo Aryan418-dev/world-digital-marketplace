@@ -35,6 +35,11 @@ export interface Location {
   contact_email: string | null;
   owner_id: string | null;
   owned_at: string | null;
+  view_count?: number;
+  click_count?: number;
+  search_count?: number;
+  heat_score?: number;
+  last_activity_at?: string | null;
   created_at: string;
   updated_at: string;
 }
