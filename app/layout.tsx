@@ -3,6 +3,7 @@ import "./globals.css";
 import "./branding.css";
 import "./curiosity.css";
 import "./top-owned.css";
+import "./brand-preview.css";
 import { Nav } from "@/components/Nav";
 
 export const metadata: Metadata = {

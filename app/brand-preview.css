@@ -1,0 +1,36 @@
+.brand-map-preview {
+  margin-top: 1.15rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  background: var(--surface);
+}
+.brand-map-preview.empty {
+  padding: 1.25rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.brand-map-preview-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.brand-map-preview-label span {
+  font-weight: 500;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.brand-map-preview-canvas {
+  position: relative;
+  width: 100%;
+  height: 280px;
+}
+.brand-map-preview-canvas .maplibregl-ctrl-group {
+  margin: 8px !important;
+}
