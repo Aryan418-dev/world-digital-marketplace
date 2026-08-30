@@ -2,12 +2,13 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./branding.css";
 import "./curiosity.css";
+import "./top-owned.css";
 import { Nav } from "@/components/Nav";
 
 export const metadata: Metadata = {
-  title: "WORLD — Digital Real Estate Marketplace",
+  title: "WORLD — Brand the Map",
   description:
-    "Own a piece of the digital world. Buy exclusive digital ownership of countries, states, and cities on an interactive global map. Prices rise with attention.",
+    "Market your brand, company, and social presence on real geography. Claim cities, states, and countries on a live global map.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

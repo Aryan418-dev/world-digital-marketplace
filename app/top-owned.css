@@ -1,0 +1,111 @@
+.top-owned-bar {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  width: min(960px, calc(100% - 1.5rem));
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  padding: 0.4rem;
+  border-radius: 14px;
+  background: rgba(7, 8, 12, 0.82);
+  border: 1px solid rgba(255,255,255,0.1);
+  backdrop-filter: blur(16px);
+  pointer-events: auto;
+}
+.top-owned-label {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 0.65rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--owned);
+  border-right: 1px solid var(--border);
+}
+.top-owned-list {
+  display: flex;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.top-owned-list::-webkit-scrollbar { display: none; }
+.top-owned-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 160px;
+  padding: 0.4rem 0.55rem;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid transparent;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.top-owned-card:hover {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.12);
+}
+.top-owned-rank {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+.top-owned-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.top-owned-avatar-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.top-owned-meta { flex: 1; min-width: 0; }
+.top-owned-meta strong {
+  display: block;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.top-owned-meta span {
+  display: block;
+  font-size: 0.65rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.top-owned-price {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--owned);
+  flex-shrink: 0;
+}
+@media (max-width: 720px) {
+  .top-owned-bar {
+    top: 0.5rem;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.45rem;
+  }
+  .top-owned-label {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.3rem;
+  }
+  .top-owned-card { min-width: 140px; }
+}
