@@ -4,6 +4,7 @@ import type { Location } from "@/lib/types";
 import { PurchaseButton } from "@/components/PurchaseButton";
 import { LocationBrandingForm } from "@/components/LocationBrandingForm";
 import Link from "next/link";
+import { TrackLocationEvent } from "@/components/TrackLocationEvent";
 
 export const dynamic = "force-dynamic";
 
@@ -97,7 +98,9 @@ export default async function LocationPage({
   const heroImage = loc.brand_image_url || loc.cover_image_url;
 
   return (
-    <div className="container" style={{ padding: "2rem 1.25rem 4rem", maxWidth: 720 }}>
+    <>
+      <TrackLocationEvent locationId={loc.id} eventType="view" />
+      <div className="container" style={{ padding: "2rem 1.25rem 4rem", maxWidth: 720 }}>
       <Link href="/marketplace" className="muted" style={{ fontSize: "0.9rem" }}>
         ← Marketplace
       </Link>
@@ -182,5 +185,6 @@ export default async function LocationPage({
         </>
       )}
     </div>
+    </>
   );
 }
