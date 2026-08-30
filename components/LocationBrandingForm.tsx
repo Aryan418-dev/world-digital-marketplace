@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Location } from "@/lib/types";
+import { BrandMapPreview } from "@/components/BrandMapPreview";
 
 export function LocationBrandingForm({ location }: { location: Location }) {
   const router = useRouter();
@@ -63,7 +64,7 @@ export function LocationBrandingForm({ location }: { location: Location }) {
     <form onSubmit={save} className="card" style={{ marginTop: "1.5rem" }}>
       <h2 style={{ fontSize: "1.15rem", marginBottom: "0.35rem" }}>Territory branding</h2>
       <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "1.15rem" }}>
-        Map ad image appears on the global map for your territory. Use a direct image URL (PNG/JPG/WebP).
+        Map ad image appears on the global map for your territory. Paste a URL below and preview how it fills the border before you save.
       </p>
 
       <div className="brand-grid">
@@ -117,11 +118,13 @@ export function LocationBrandingForm({ location }: { location: Location }) {
         </label>
       </div>
 
+      <BrandMapPreview location={location} imageUrl={brandImageUrl || logoUrl} />
+
       {(brandImageUrl || logoUrl) && (
         <div style={{ marginTop: 14, display: "flex", gap: 16, flexWrap: "wrap" }}>
           {brandImageUrl && (
             <div>
-              <span className="muted" style={{ fontSize: "0.8rem" }}>Map ad preview</span>
+              <span className="muted" style={{ fontSize: "0.8rem" }}>Flat image</span>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={brandImageUrl}
